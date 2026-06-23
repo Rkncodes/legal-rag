@@ -21,14 +21,20 @@ def split_into_sections(text):
     current_content = []
 
     numbered_heading_pattern = re.compile(
-        r"^\d+(\.\d+)*\s+[A-Z].+"
-    )
+    r"^\d+(\.\d+)*(\s*)[A-Z].+"
+)
 
     caps_heading_pattern = re.compile(
         r"^[A-Z][A-Z\s&\-]{3,}$"
     )
 
     for line in lines:
+
+        line = re.sub(
+            r"^(\d+(?:\.\d+)+)([A-Z])",
+            r"\1 \2",
+            line
+)
 
         line = line.strip()
 

@@ -27,6 +27,10 @@ def get_neighbor_chunks(metadata):
     document_id = metadata["document_id"]
     chunk_id = metadata["chunk_id"]
 
+    print("\nTOP CHUNK")
+    print(metadata["heading"])
+    print("CHUNK ID:", chunk_id)
+
     neighbor_ids = [
     chunk_id - 2,
     chunk_id - 1,
@@ -62,10 +66,11 @@ def get_neighbor_chunks(metadata):
         key=lambda x: x["metadata"]["chunk_id"]
     )
     
-    print("\nNEIGHBOR CHUNKS FOUND")
+    if DEBUG:
+     print("\nNEIGHBOR CHUNKS FOUND")
 
-    for n in neighbors:
-     print(
+     for n in neighbors:
+      print(
         f"Chunk ID: {n['metadata']['chunk_id']} | "
         f"Page: {n['metadata']['page_number']}"
     )
@@ -76,23 +81,11 @@ def generate_answer(question, ranked_results):
 
     top_chunks = ranked_results[:10]
     
+    if VERBOSE: 
 
+      print("\n\nRETRIEVED CHUNKS\n")
 
-    for item in top_chunks:
-
-     if (
-        item["metadata"]["pdf_name"] == "1. BSNL MSA dated 9 Oct 2015.pdf"
-        and item["metadata"]["page_number"] == 9
-    ):
-        print("\n" + "=" * 100)
-        print(item["chunk"])
-        print("=" * 100)
-
-    if VERBOSE:
-
-     print("\n\nRETRIEVED CHUNKS\n")
-
-     for i, item in enumerate(top_chunks, start=1):
+      for i, item in enumerate(top_chunks, start=1):
 
         print(f"\nCHUNK {i}")
 
@@ -165,9 +158,10 @@ def generate_answer(question, ranked_results):
         item["metadata"]
         for item in expanded_chunks
     ]
-
-    print(f"\nOriginal chunks: {len(top_chunks)}")
-    print(f"Expanded chunks: {len(expanded_chunks)}")
+    
+    if DEBUG:
+     print(f"\nOriginal chunks: {len(top_chunks)}")
+     print(f"Expanded chunks: {len(expanded_chunks)}")
 
     if DEBUG:
         print("\nQUESTION:")
@@ -214,11 +208,9 @@ CONTENT:
 
     context = "\n\n".join(context_parts)
 
-    print("\nTEST CHUNK MAP:")
-    print(chunk_map["CHUNK_001"])
-
-    print("\nCHUNK MAP")
-    print(chunk_map)
+    if DEBUG:
+     print("\nTEST CHUNK MAP:")
+     print(chunk_map["CHUNK_001"])
 
     prompt = f"""
 You are a Legal Document Assistant.
@@ -466,50 +458,6 @@ QUESTION:
 
          print("\nCITATION SOURCE:")
          print(best_source)
-
-    if (
-        "SOURCE_DOCUMENT_USED:" in answer
-        and
-        "SOURCE_PAGE_USED:" in answer
-    ):
-
-        try:
-
-            document_used = (
-                answer.split(
-                    "SOURCE_DOCUMENT_USED:"
-                )[1]
-                .split(
-                    "SOURCE_PAGE_USED:"
-                )[0]
-                .strip()
-            )
-
-            page_used = int(
-                answer.split(
-                    "SOURCE_PAGE_USED:"
-                )[1]
-                .split()[0]
-            )
-
-            for meta in metadata:
-
-                if (
-                    meta["pdf_name"] == document_used
-                    and
-                    meta["page_number"] == page_used
-                ):
-
-                    best_source = meta
-                    break
-
-        except Exception:
-
-            pass
-
-        answer = answer.split(
-            "SOURCE_DOCUMENT_USED:"
-        )[0].strip()
 
     if answer.startswith(
     "I don't know anything about that from the provided documents."

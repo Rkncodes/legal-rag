@@ -125,6 +125,17 @@ def retrieve(query, k=15):
     print("\nFIRST METADATA ENTRY\n")
     print(results["metadatas"][0][0])
 
+    print("\nFIRST METADATA ENTRY\n")
+    print(results["metadatas"][0][0])
+
+    print("\nFULL METADATA OBJECT\n")
+    print(results["metadatas"][0][0])
+
+    print("\nAVAILABLE METADATA KEYS\n")
+    print(
+    results["metadatas"][0][0].keys()
+    )
+
     print("\nAVAILABLE METADATA KEYS\n")
     print(
         results["metadatas"][0][0].keys()

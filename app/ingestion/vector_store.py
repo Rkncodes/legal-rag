@@ -4,10 +4,10 @@ from sentence_transformers import SentenceTransformer
 
 client = chromadb.PersistentClient(path="./chroma_db")
 
-# try:
-#     client.delete_collection("legal_documents")
-# except:
-#     pass
+try:
+    client.delete_collection("legal_documents")
+except:
+    pass
 
 collection = client.get_or_create_collection(
     name="legal_documents"
