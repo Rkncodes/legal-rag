@@ -1,0 +1,30 @@
+# PDFs
+data/pdfs/
+*.pdf
+
+# Chroma
+chroma_db/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Env
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+chroma_db/
+chroma_db*/
+cache/
+processed_pdfs.json
+
+app/evaluation/*
+app/ingestion/test_*
