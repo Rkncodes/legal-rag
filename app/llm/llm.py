@@ -195,14 +195,17 @@ def generate_answer(question, ranked_results):
 
     context_parts = []
 
-    for i, chunk in enumerate(chunks):
-        context_parts.append(
-            f"""
-SOURCE DOCUMENT:
-{metadata[i].get("pdf_name", "Unknown")}
+    chunk_map = {}
 
-PAGE:
-{metadata[i].get("page_number", "Unknown")}
+    for i, chunk in enumerate(chunks, start=1):
+
+         chunk_id = f"CHUNK_{i:03d}"
+
+         chunk_map[chunk_id] = metadata[i - 1]
+
+         context_parts.append(
+            f"""
+{chunk_id}
 
 CONTENT:
 {chunk}
@@ -210,6 +213,12 @@ CONTENT:
         )
 
     context = "\n\n".join(context_parts)
+
+    print("\nTEST CHUNK MAP:")
+    print(chunk_map["CHUNK_001"])
+
+    print("\nCHUNK MAP")
+    print(chunk_map)
 
     prompt = f"""
 You are a Legal Document Assistant.
@@ -241,11 +250,15 @@ Use nearby values and row structure when identifying quantities, item names, cla
 
 7. After your answer, write:
 
-SOURCE_DOCUMENT_USED: <pdf name>
+USED_CHUNKS:
+CHUNK_XXX
+CHUNK_YYY
 
-SOURCE_PAGE_USED: <page number>
+List every chunk that directly supports the answer.
 
-using the exact document name and page number from the source that contains the answer.
+Only use chunk IDs that appear in the provided context.
+
+Do not invent chunk IDs.
 
 8. If the user asks for:
 
@@ -405,6 +418,55 @@ QUESTION:
 
     best_source = metadata[0]
 
+    used_chunk_ids = []
+
+    if "USED_CHUNKS:" in answer:
+
+      used_chunks_text = answer.split(
+        "USED_CHUNKS:"
+    )[1]
+
+      used_chunk_ids = [
+        line.strip()
+        for line in used_chunks_text.splitlines()
+        if line.strip().startswith("CHUNK_")
+    ]
+
+      if used_chunk_ids:
+
+         used_sources = []
+
+         for chunk_id in used_chunk_ids:
+
+            if chunk_id in chunk_map:
+
+                used_sources.append(
+                    chunk_map[chunk_id]
+                )
+
+         if used_sources:
+
+            best_source = used_sources[0]
+
+            unique_sources = []
+
+            for source in used_sources:
+
+              if source not in unique_sources:
+                 unique_sources.append(source)
+
+         print("\nUSED SOURCES:")
+
+         for source in used_sources:
+
+            print(
+                source["pdf_name"],
+                source["page_number"]
+            )
+
+         print("\nCITATION SOURCE:")
+         print(best_source)
+
     if (
         "SOURCE_DOCUMENT_USED:" in answer
         and
@@ -449,8 +511,10 @@ QUESTION:
             "SOURCE_DOCUMENT_USED:"
         )[0].strip()
 
-    if answer == "I don't know anything about that from the provided documents.":
-        return answer
+    if answer.startswith(
+    "I don't know anything about that from the provided documents."
+):
+     return "I don't know anything about that from the provided documents."
 
     if DEBUG:
         print("\nFINAL SOURCE:")
@@ -458,13 +522,30 @@ QUESTION:
             f"{best_source.get('pdf_name')} | "
             f"Page {best_source.get('page_number')}"
         )
+    sources_text = ""
+
+    if 'unique_sources' in locals():
+
+        for source in unique_sources:
+
+            sources_text += (
+                f"PDF Name : {source.get('pdf_name', 'Unknown')}\n"
+                f"Page No  : {source.get('page_number', 'Unknown')}\n"
+                f"PDF Path : {source.get('pdf_path', 'Unknown')}\n\n"
+        )
+
+    else:
+
+       sources_text = (
+          f"PDF Name : {best_source.get('pdf_name', 'Unknown')}\n"
+          f"Page No  : {best_source.get('page_number', 'Unknown')}\n"
+          f"PDF Path : {best_source.get('pdf_path', 'Unknown')}\n"
+        )
 
     return f"""
 {answer}
 
-SOURCE
+SOURCES USED
 
-PDF Name : {best_source.get('pdf_name', 'Unknown')}
-Page No  : {best_source.get('page_number', 'Unknown')}
-PDF Path : {best_source.get('pdf_path', 'Unknown')}
+{sources_text}
 """
