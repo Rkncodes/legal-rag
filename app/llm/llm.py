@@ -30,6 +30,8 @@ def get_neighbor_chunks(metadata):
     print("\nTOP CHUNK")
     print(metadata["heading"])
     print("CHUNK ID:", chunk_id)
+    print("\nFULL METADATA")
+    print(metadata)
 
     neighbor_ids = [
     chunk_id - 2,

@@ -1,7 +1,10 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.ingestion.reranker import rerank
 from app.ingestion.retriever import retrieve
 from app.llm.llm import generate_answer
+from app.ingestion.retriever import collection
+import re
 
 from app.models import (
     QuestionRequest,
@@ -12,6 +15,16 @@ app = FastAPI(
     title="Legal RAG API"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+    "http://localhost:5173",
+    "http://127.0.0.1:5173"
+],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
@@ -70,3 +83,99 @@ def ask_question(request: QuestionRequest):
     return QuestionResponse(
         answer=answer
     )
+
+@app.get("/keyword-search")
+def keyword_search(
+    keyword: str,
+    agreement: str
+):
+
+    keyword = keyword.lower()
+
+    results = collection.get(
+        include=[
+            "documents",
+            "metadatas"
+        ]
+    )
+
+    matches = []
+
+    for doc, meta in zip(
+        results["documents"],
+        results["metadatas"]
+    ):
+
+        if agreement.lower() not in meta["pdf_name"].lower():
+            continue
+
+        doc_lower = doc.lower()
+
+        if keyword not in doc_lower:
+            continue
+
+        index = doc_lower.find(keyword)
+
+        start = max(
+            0,
+            index - 150
+        )
+
+        end = min(
+            len(doc),
+            index + 150
+        )
+
+        snippet = " ".join(
+           doc[start:end].split()
+        )
+
+        snippet = re.sub(
+            rf"(?i)({re.escape(keyword)})",
+            r"<<<HIGHLIGHT>>>\1<<<END>>>",
+            snippet
+        )
+
+        matches.append(
+            {
+                "page_number":
+                    meta["page_number"],
+
+                "heading":
+                    meta.get(
+                        "heading",
+                        ""
+                    ),
+
+                "snippet":
+                    snippet
+            }
+        )
+
+    return {
+        "keyword": keyword,
+        "agreement": agreement,
+        "count": len(matches),
+        "matches": matches
+    }
+
+@app.get("/agreements")
+def get_agreements():
+
+    results = collection.get(
+        include=["metadatas"]
+    )
+
+    agreements = set()
+
+    for meta in results["metadatas"]:
+
+        agreements.add(
+            meta["pdf_name"]
+        )
+
+    return {
+        "agreements": sorted(
+            list(agreements)
+        )
+    }

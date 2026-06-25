@@ -11,6 +11,27 @@ def split_into_sections(text):
         if len(words) > 12:
             return False
 
+        lower = line.lower()
+
+        sentence_indicators = [
+            "shall",
+            "will",
+            "may",
+            "must",
+            "should",
+            "means",
+            "includes",
+            "include",
+            "responsible",
+            "required"
+        ]
+
+        if any(
+           word in lower
+        for word in sentence_indicators
+    ):
+         return False
+
         return True
 
     lines = text.split("\n")
@@ -21,11 +42,16 @@ def split_into_sections(text):
     current_content = []
 
     numbered_heading_pattern = re.compile(
-    r"^\d+(\.\d+)*(\s*)[A-Z].+"
+    r"^\d+(?:\.\d+)*\.?\s+[A-Z].+$"
 )
 
     caps_heading_pattern = re.compile(
         r"^[A-Z][A-Z\s&\-]{3,}$"
+    )
+
+    article_heading_pattern = re.compile(
+     r"^ARTICLE\s+\d+.*$",
+     re.IGNORECASE
     )
 
     for line in lines:
@@ -47,10 +73,18 @@ def split_into_sections(text):
         )
 
         is_caps_heading = (
-            caps_heading_pattern.match(line)
+           caps_heading_pattern.match(line)
         )
 
-        if is_numbered_heading or is_caps_heading:
+        is_article_heading = (
+            article_heading_pattern.match(line)
+        )
+
+        if (
+            is_numbered_heading
+            or is_caps_heading
+            or is_article_heading
+               ):
 
             if current_heading:
 
@@ -125,6 +159,9 @@ def chunk_pages(pages):
         for section in sections:
 
             heading = section["heading"]
+
+            print("\nHEADING DETECTED:")
+            print(repr(heading))
 
             print(
                 f"SECTION -> {heading}"

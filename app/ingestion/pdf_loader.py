@@ -7,7 +7,7 @@ import json
 import hashlib
 
 pytesseract.pytesseract.tesseract_cmd = (
-    r"C:\Users\Rajvinder.kaur\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 )
 
 CACHE_DIR = "cache"

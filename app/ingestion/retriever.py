@@ -17,6 +17,51 @@ collection = client.get_collection(
     "legal_documents"
 )
 
+def get_neighbor_chunks(metadata):
+
+    pdf_name = metadata["pdf_name"]
+
+    chunk_id = metadata["chunk_id"]
+
+    print(
+        "\nCHUNK ID TYPE:",
+        type(chunk_id),
+        "VALUE:",
+        chunk_id
+    )
+
+
+    neighbors = collection.get(
+        where={
+            "pdf_name": pdf_name
+        },
+        include=[
+            "documents",
+            "metadatas"
+        ]
+    )
+
+    expanded = []
+
+    for doc, meta in zip(
+        neighbors["documents"],
+        neighbors["metadatas"]
+    ):
+
+        if abs(
+            int(meta["chunk_id"]) -
+            int(chunk_id)
+        ) <= 1:
+
+            expanded.append(
+                (
+                    doc,
+                    meta
+                )
+            )
+
+    return expanded
+
 print(
     "Collection count:",
     collection.count()
@@ -98,6 +143,101 @@ def retrieve(query, k=15):
     print("QUERY:", query)
     print("WHERE FILTER:", where_filter)
     print("====================================")
+
+    print(
+    "AGREEMENT PDF:",
+    repr(agreement_pdf)
+    )
+
+    all_data = collection.get(
+    include=["documents", "metadatas"]
+    )
+
+    all_docs = collection.get(
+    include=["documents"]
+)
+
+    print("\nSEARCHING FOR NOTICE\n")
+
+    for doc in all_docs["documents"]:
+
+     if "notice" in doc.lower():
+
+        print("\nFOUND NOTICE CHUNK\n")
+        print(doc[:1000])
+        break
+     
+     print("\nSEARCHING FOR CONFIDENTIALITY\n")
+
+    for doc in all_docs["documents"]:
+
+     if "confidential" in doc.lower():
+
+        print("\nFOUND CONFIDENTIALITY CHUNK\n")
+        print(doc[:1000])
+        break
+
+    for doc, meta in zip(
+     all_data["documents"],
+     all_data["metadatas"]
+):
+
+     if meta["pdf_name"] == "BSNL & Voda (IP)  MSA dated 20 Jan 2014- USO.pdf":
+
+        if "notice" in doc.lower():
+
+            print("\nFOUND NOTICE\n")
+            print(meta)
+            print(doc[:1000])
+
+    print("\nSEARCHING FOR NOTICE CLAUSES\n")
+
+    for doc, meta in zip(
+     all_data["documents"],
+     all_data["metadatas"]
+):
+
+      if (
+         "notice" in doc.lower()
+         or
+         "communication" in doc.lower()
+         or
+         "notices" in doc.lower()
+    ):
+
+          print("\nFOUND\n")
+
+          print(
+            "PDF:",
+            meta["pdf_name"]
+        )
+
+          print(
+            "PAGE:",
+            meta["page_number"]
+        )
+
+          print(
+            doc[:500]
+        )
+
+    all_data = collection.get(
+    include=["metadatas"]
+)
+
+    print("\nALL PDF NAMES IN CHROMA\n")
+
+    pdfs = set()
+
+    for meta in all_data["metadatas"]:
+
+     pdfs.add(
+        meta["pdf_name"]
+    )
+
+    for pdf in sorted(pdfs):
+
+     print(repr(pdf))
 
     results = collection.query(
         query_embeddings=[query_embedding],
@@ -231,6 +371,37 @@ def retrieve(query, k=15):
         key=lambda x: x[0]
     )
 
+    expanded_docs = []
+    expanded_meta = []
+
+    seen = set()
+
+    for item in boosted[:5]:
+
+        _, _, meta, _ = item
+
+        neighbors = get_neighbor_chunks(
+            meta
+        )
+
+        for doc, neighbor_meta in neighbors:
+
+            key = (
+                 neighbor_meta["pdf_name"],
+                 neighbor_meta["chunk_id"]
+             )
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+
+            expanded_docs.append(doc)
+
+            expanded_meta.append(
+                   neighbor_meta
+            )
+
     print("\nTOP 10 AFTER BOOSTING\n")
 
     for i, item in enumerate(
@@ -254,20 +425,28 @@ def retrieve(query, k=15):
             f"{item[2].get('heading', '')}"
         )
 
-    results["documents"][0] = [
-        x[1]
-        for x in boosted
-    ]
+    results["documents"][0] = expanded_docs
 
-    results["metadatas"][0] = [
-        x[2]
-        for x in boosted
-    ]
+    results["metadatas"][0] = expanded_meta
 
     results["distances"][0] = [
-        x[3]
-        for x in boosted
+        0
+        for _ in expanded_docs
     ]
+
+    print("\nPAGES RETURNED\n")
+
+    pages = set()
+
+    for meta in results["metadatas"][0]:
+
+     pages.add(
+        meta["page_number"]
+    )
+
+    print(
+    sorted(pages)
+)
 
     if DEBUG:
 
