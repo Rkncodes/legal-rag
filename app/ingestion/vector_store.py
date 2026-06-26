@@ -30,7 +30,7 @@ def store_chunks(all_chunks):
         existing = collection.get(
             ids=[chunk_id]
         )
-        
+
         if existing["ids"]:
             continue
 
@@ -52,16 +52,18 @@ def store_chunks(all_chunks):
             documents=[chunk["chunk_text"]],
             embeddings=[embedding],
             metadatas=[
-    {
-        "pdf_name": chunk["pdf_name"],
-        "source_document": chunk["pdf_name"],
-        "pdf_path": chunk["pdf_path"],
-        "page_number": chunk["page_number"],
-        "document_id": chunk["document_id"],
-        "chunk_id": chunk["chunk_id"],
-        "heading": chunk["heading"],
-    }
-]
+                {
+                    "pdf_name":        chunk["pdf_name"],
+                    "source_document": chunk["pdf_name"],
+                    "pdf_path":        chunk["pdf_path"],
+                    "page_number":     chunk["page_number"],
+                    "document_id":     chunk["document_id"],
+                    "chunk_id":        chunk["chunk_id"],
+                    "heading":         chunk["heading"],
+                    # NEW: section_id for clause-family expansion
+                    "section_id":      chunk.get("section_id") or "",
+                }
+            ]
         )
 
     print(

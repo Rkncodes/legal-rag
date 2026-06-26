@@ -4,117 +4,90 @@ from sentence_transformers import SentenceTransformer
 from app.config import DEBUG
 from app.ingestion.agreement_detector import detect_agreement
 
+try:
+    from rank_bm25 import BM25Okapi
+    BM25_AVAILABLE = True
+except ImportError:
+    BM25_AVAILABLE = False
+    print("rank_bm25 not installed — BM25 disabled. Run: pip install rank-bm25")
 
-embedding_model = SentenceTransformer(
-    "BAAI/bge-small-en-v1.5"
-)
+embedding_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
 
-client = chromadb.PersistentClient(
-    path="chroma_db"
-)
+client = chromadb.PersistentClient(path="chroma_db")
 
-collection = client.get_collection(
-    "legal_documents"
-)
+collection = client.get_collection("legal_documents")
+
+print("Collection count:", collection.count())
+
 
 def get_neighbor_chunks(metadata):
 
     pdf_name = metadata["pdf_name"]
-
     chunk_id = metadata["chunk_id"]
 
-    print(
-        "\nCHUNK ID TYPE:",
-        type(chunk_id),
-        "VALUE:",
-        chunk_id
-    )
-
     neighbors = collection.get(
-        where={
-            "pdf_name": pdf_name
-        },
-        include=[
-            "documents",
-            "metadatas"
-        ]
+        where={"pdf_name": pdf_name},
+        include=["documents", "metadatas"]
     )
 
     expanded = []
 
-    for doc, meta in zip(
-        neighbors["documents"],
-        neighbors["metadatas"]
-    ):
-
-        if abs(
-            int(meta["chunk_id"]) -
-            int(chunk_id)
-        ) <= 1:
-
-            expanded.append(
-                (
-                    doc,
-                    meta
-                )
-            )
+    for doc, meta in zip(neighbors["documents"], neighbors["metadatas"]):
+        if abs(int(meta["chunk_id"]) - int(chunk_id)) <= 3:
+            expanded.append((doc, meta))
 
     return expanded
 
-print(
-    "Collection count:",
-    collection.count()
-)
 
-# ── CHANGED: added force_agreement=None parameter ─────────────────────────
+def get_section_chunks(metadata):
+    """Fetch ALL chunks with the same section_id from the same PDF.
+    This pulls the complete clause family — e.g. all of section 6
+    (6.1, 6.1.1, 6.2, 6.3, 6.4, 6.4.1 ... 6.4.5).
+    """
+    section_id = metadata.get("section_id", "")
+    pdf_name   = metadata["pdf_name"]
+
+    if not section_id:
+        return get_neighbor_chunks(metadata)
+
+    results = collection.get(
+        where={
+            "$and": [
+                {"pdf_name":   {"$eq": pdf_name}},
+                {"section_id": {"$eq": section_id}},
+            ]
+        },
+        include=["documents", "metadatas"]
+    )
+
+    if not results["documents"]:
+        return get_neighbor_chunks(metadata)
+
+    return list(zip(results["documents"], results["metadatas"]))
+
+
+def normalize_query(query):
+    query = query.lower()
+    query = query.replace("master service agreement", "")
+    query = query.replace("master services agreement", "")
+    query = query.replace("msa", "")
+    query = query.replace("what is the clause for", "")
+    query = query.replace("what is", "")
+    return query.strip()
+
+
+def tokenize(text):
+    """Simple tokenizer for BM25."""
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
 def retrieve(query, k=15, force_agreement=None):
 
     print("\nQUERY RECEIVED:", query)
 
-    print(
-        "COLLECTION COUNT:",
-        collection.count()
-    )
+    query_for_search = normalize_query(query)
 
-    def normalize_query(query):
-
-        query = query.lower()
-
-        query = query.replace(
-            "master service agreement",
-            ""
-        )
-
-        query = query.replace(
-            "master services agreement",
-            ""
-        )
-
-        query = query.replace(
-            "msa",
-            ""
-        )
-
-        query = query.replace(
-            "what is the clause for",
-            ""
-        )
-
-        query = query.replace(
-            "what is",
-            ""
-        )
-
-        return query.strip()
-
-    query_for_search = normalize_query(
-        query
-    )
-
-    print(
-        "NORMALIZED QUERY:",
-        query_for_search
-    )
+    print("NORMALIZED QUERY:", query_for_search)
 
     query_embedding = embedding_model.encode(
         query_for_search,
@@ -123,420 +96,159 @@ def retrieve(query, k=15, force_agreement=None):
 
     where_filter = None
 
-    # ── CHANGED: force_agreement takes priority over detect_agreement ─────
     if force_agreement:
-
-        where_filter = {
-            "pdf_name": force_agreement
-        }
-
+        where_filter = {"pdf_name": force_agreement}
         agreement_pdf = force_agreement
-
-        print(
-            f"\nFORCE AGREEMENT: {force_agreement}"
-        )
-
+        print(f"\nFORCE AGREEMENT: {force_agreement}")
     else:
-
-        agreement_pdf = detect_agreement(
-            query,
-            collection
-        )
-
+        agreement_pdf = detect_agreement(query, collection)
         if agreement_pdf:
+            where_filter = {"pdf_name": agreement_pdf}
+            print(f"\nAGREEMENT DETECTED: {agreement_pdf}")
 
-            where_filter = {
-                "pdf_name": agreement_pdf
-            }
-
-            print(
-                f"\nAGREEMENT DETECTED: {agreement_pdf}"
-            )
-
-    # ─────────────────────────────────────────────────────────────────────
-
-    print("\n========== RETRIEVER DEBUG ==========")
-    print("QUERY:", query)
-    print("WHERE FILTER:", where_filter)
-    print("====================================")
-
-    print(
-    "AGREEMENT PDF:",
-    repr(agreement_pdf)
-    )
-
-    all_data = collection.get(
-    include=["documents", "metadatas"]
-    )
-
-    all_docs = collection.get(
-    include=["documents"]
-)
-
-    print("\nSEARCHING FOR NOTICE\n")
-
-    for doc in all_docs["documents"]:
-
-     if "notice" in doc.lower():
-
-        print("\nFOUND NOTICE CHUNK\n")
-        print(doc[:1000])
-        break
-     
-     print("\nSEARCHING FOR CONFIDENTIALITY\n")
-
-    for doc in all_docs["documents"]:
-
-     if "confidential" in doc.lower():
-
-        print("\nFOUND CONFIDENTIALITY CHUNK\n")
-        print(doc[:1000])
-        break
-
-    for doc, meta in zip(
-     all_data["documents"],
-     all_data["metadatas"]
-):
-
-     if meta["pdf_name"] == "BSNL & Voda (IP)  MSA dated 20 Jan 2014- USO.pdf":
-
-        if "notice" in doc.lower():
-
-            print("\nFOUND NOTICE\n")
-            print(meta)
-            print(doc[:1000])
-
-    print("\nSEARCHING FOR NOTICE CLAUSES\n")
-
-    for doc, meta in zip(
-     all_data["documents"],
-     all_data["metadatas"]
-):
-
-      if (
-         "notice" in doc.lower()
-         or
-         "communication" in doc.lower()
-         or
-         "notices" in doc.lower()
-    ):
-
-          print("\nFOUND\n")
-
-          print(
-            "PDF:",
-            meta["pdf_name"]
-        )
-
-          print(
-            "PAGE:",
-            meta["page_number"]
-        )
-
-          print(
-            doc[:500]
-        )
-
-    all_data = collection.get(
-    include=["metadatas"]
-)
-
-    print("\nALL PDF NAMES IN CHROMA\n")
-
-    pdfs = set()
-
-    for meta in all_data["metadatas"]:
-
-     pdfs.add(
-        meta["pdf_name"]
-    )
-
-    for pdf in sorted(pdfs):
-
-     print(repr(pdf))
+    print(f"\nWHERE FILTER: {where_filter}")
 
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=50,
+        n_results=80,
         where=where_filter,
-        include=[
-            "documents",
-            "metadatas",
-            "distances"
-        ]
+        include=["documents", "metadatas", "distances"]
     )
 
     if not results["metadatas"][0]:
-
-        print(
-            "\nNO RESULTS FOUND FOR FILTER\n"
-        )
-
-        return {
-            "documents": [[]],
-            "metadatas": [[]],
-            "distances": [[]]
-        }
-
-    print("\nFIRST METADATA ENTRY\n")
-    print(results["metadatas"][0][0])
-
-    print("\nFIRST METADATA ENTRY\n")
-    print(results["metadatas"][0][0])
-
-    print("\nFULL METADATA OBJECT\n")
-    print(results["metadatas"][0][0])
-
-    print("\nAVAILABLE METADATA KEYS\n")
-    print(
-    results["metadatas"][0][0].keys()
-    )
-
-    print("\nAVAILABLE METADATA KEYS\n")
-    print(
-        results["metadatas"][0][0].keys()
-    )
+        print("\nNO RESULTS FOUND FOR FILTER\n")
+        return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
     documents = results["documents"][0]
     metadatas = results["metadatas"][0]
     distances = results["distances"][0]
 
-    print("\nTOP PDFS RETURNED\n")
-
-    for meta in metadatas[:10]:
-
-        print(
-            meta.get("pdf_name")
-        )
-
     print("\nRAW RETRIEVAL RESULTS\n")
-
     for rank, (doc, meta, dist) in enumerate(
-        zip(documents, metadatas, distances),
-        start=1
+        zip(documents, metadatas, distances), start=1
     ):
         print(
-            f"{rank}. "
-            f"{meta['pdf_name']} | "
+            f"{rank}. {meta['pdf_name']} | "
             f"Page {meta['page_number']} | "
             f"Distance {dist}"
         )
 
+    # ── BM25 scoring ──────────────────────────────────────────────────
+    bm25_scores = {}
+    if BM25_AVAILABLE and documents:
+        corpus = [tokenize(doc) for doc in documents]
+        bm25   = BM25Okapi(corpus)
+        query_tokens = tokenize(query_for_search)
+        scores = bm25.get_scores(query_tokens)
+        # normalize BM25 scores to 0-1
+        max_bm25 = max(scores) if max(scores) > 0 else 1
+        for i, score in enumerate(scores):
+            bm25_scores[i] = score / max_bm25
+
+    # ── boosting ──────────────────────────────────────────────────────
     boosted = []
 
-    for doc, meta, dist in zip(
-        documents,
-        metadatas,
-        distances
-    ):
+    for idx, (doc, meta, dist) in enumerate(zip(documents, metadatas, distances)):
 
+        # semantic score
         score = -dist
 
-        pdf_name = meta.get(
-            "pdf_name",
-            ""
-        ).lower()
-
+        # BM25 boost
+        if BM25_AVAILABLE and idx in bm25_scores:
+            score += bm25_scores[idx] * 0.3
+            
+        pdf_name    = meta.get("pdf_name", "").lower()
         query_lower = query.lower()
 
         if pdf_name in query_lower:
-
             score += 20
+            print(f"PDF BOOST APPLIED -> {pdf_name}")
 
-            print(
-                f"PDF BOOST APPLIED -> "
-                f"{pdf_name}"
-            )
-
-        heading = meta.get(
-            "heading",
-            ""
-        ).lower()
-
-        clean_heading = re.sub(
-            r"^\d+(\.\d+)*\s*",
-            "",
-            heading
-        ).strip()
+        heading = meta.get("heading", "").lower()
+        clean_heading = re.sub(r"^\d+(\.\d+)*\s*", "", heading).strip()
 
         if clean_heading:
+            query_words   = set(query_lower.split())
+            heading_words = set(clean_heading.split())
+            overlap       = len(query_words & heading_words)
 
-            if (
-                clean_heading in query_lower
-                or
-                query_lower in clean_heading
-            ):
-                score += 5
+            if query_lower in clean_heading or clean_heading in query_lower:
+                score += 25
+                print(f"EXACT HEADING BOOST -> {heading}")
+            elif overlap >= 3:
+                score += 10
+                print(f"PARTIAL HEADING BOOST -> {heading}")
 
-                print(
-                    f"HEADING BOOST APPLIED -> "
-                    f"{heading}"
-                )
+        boosted.append((score, doc, meta, dist))
 
-        boosted.append(
-            (
-                score,
-                doc,
-                meta,
-                dist
-            )
+    boosted.sort(reverse=True, key=lambda x: x[0])
+
+    print("\nTOP 10 AFTER BOOSTING\n")
+    for i, item in enumerate(boosted[:10], start=1):
+        print(
+            f"{i}. {item[2]['pdf_name']} | "
+            f"Page {item[2]['page_number']} | "
+            f"SectionID: {item[2].get('section_id','')} | "
+            f"Heading: {item[2].get('heading','')[:50]}"
         )
 
-    boosted.sort(
-        reverse=True,
-        key=lambda x: x[0]
-    )
-
+    # ── section expansion (replaces brittle neighbor ±3) ─────────────
     expanded_docs = []
     expanded_meta = []
-
     seen = set()
 
     for item in boosted[:5]:
-
         _, _, meta, _ = item
 
-        neighbors = get_neighbor_chunks(
-            meta
-        )
+        # use section expansion if section_id exists, else neighbor
+        section_chunks = get_section_chunks(meta)
 
-        for doc, neighbor_meta in neighbors:
-
-            key = (
-                 neighbor_meta["pdf_name"],
-                 neighbor_meta["chunk_id"]
-             )
-
+        for doc, neighbor_meta in section_chunks:
+            key = (neighbor_meta["pdf_name"], neighbor_meta["chunk_id"])
             if key in seen:
                 continue
-
             seen.add(key)
-
             expanded_docs.append(doc)
+            expanded_meta.append(neighbor_meta)
 
-            expanded_meta.append(
-                   neighbor_meta
-            )
-
-    print("\nTOP 10 AFTER BOOSTING\n")
-
-    for i, item in enumerate(
-        boosted[:10],
-        start=1
-    ):
-        print(
-            f"{i}. "
-            f"{item[2]['pdf_name']} | "
-            f"Page {item[2]['page_number']}"
-        )
-
-    print("\nHEADING BOOST RESULTS\n")
-
-    for rank, item in enumerate(
-        boosted[:10],
-        start=1
-    ):
-        print(
-            f"{rank}. "
-            f"{item[2].get('heading', '')}"
-        )
+    # also expand neighbors for top 3 to catch cross-section continuations
+    for item in boosted[:3]:
+        _, _, meta, _ = item
+        neighbors = get_neighbor_chunks(meta)
+        for doc, neighbor_meta in neighbors:
+            key = (neighbor_meta["pdf_name"], neighbor_meta["chunk_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            expanded_docs.append(doc)
+            expanded_meta.append(neighbor_meta)
 
     results["documents"][0] = expanded_docs
-
     results["metadatas"][0] = expanded_meta
+    results["distances"][0] = [0 for _ in expanded_docs]
 
-    results["distances"][0] = [
-        0
-        for _ in expanded_docs
-    ]
-
-    print("\nPAGES RETURNED\n")
-
-    pages = set()
-
-    for meta in results["metadatas"][0]:
-
-     pages.add(
-        meta["page_number"]
-    )
-
-    print(
-    sorted(pages)
-)
+    pages = sorted(set(m["page_number"] for m in expanded_meta))
+    print(f"\nPAGES RETURNED: {pages}")
 
     if DEBUG:
-
         print("\n" + "=" * 80)
         print(f"QUERY: {query}")
         print("=" * 80)
         print("\nBOOSTED RESULTS\n")
 
-        for i in range(
-            len(results["documents"][0])
-        ):
-
-            metadata = (
-                results["metadatas"][0][i]
-            )
-
-            document = (
-                results["documents"][0][i]
-            )
-
-            print(
-                f"\nRank {i + 1}"
-            )
-
-            print(
-                f"Distance: "
-                f"{results['distances'][0][i]}"
-            )
-
-            print(
-                f"PDF: "
-                f"{metadata['pdf_name']}"
-            )
-
-            print(
-                f"Page: "
-                f"{metadata['page_number']}"
-            )
-
+        for i in range(len(results["documents"][0])):
+            metadata = results["metadatas"][0][i]
+            document = results["documents"][0][i]
+            print(f"\nRank {i + 1}")
+            print(f"PDF: {metadata['pdf_name']}")
+            print(f"Page: {metadata['page_number']}")
             if "heading" in metadata:
-
-                print(
-                    f"Heading: "
-                    f"{metadata['heading']}"
-                )
-
-            if "document_id" in metadata:
-
-                print(
-                    f"Document ID: "
-                    f"{metadata['document_id']}"
-                )
-
+                print(f"Heading: {metadata['heading']}")
             if "chunk_id" in metadata:
-
-                print(
-                    f"Chunk ID: "
-                    f"{metadata['chunk_id']}"
-                )
-
-            print(
-                "\nTEXT PREVIEW:"
-            )
-
-            print(
-                "-" * 40
-            )
-
-            preview = document[:500]
-
-            print(preview)
-
-            print(
-                "-" * 40
-            )
+                print(f"Chunk ID: {metadata['chunk_id']}")
+            print("\nTEXT PREVIEW:")
+            print("-" * 40)
+            print(document[:500])
+            print("-" * 40)
 
     return results

@@ -88,5 +88,9 @@ def rerank(query, retrieval_results):
     print("-" * 80)
     print(ranked[0]["chunk"])
     print("-" * 80)
+    
+    print("\nRERANKER OUTPUT ORDER:")
+    for i, item in enumerate(ranked[:5], start=1):
+        print(f"  {i}. page={item['metadata']['page_number']} chunk_id={item['metadata'].get('chunk_id')} heading={item['metadata'].get('heading','')[:40]}")
 
     return ranked

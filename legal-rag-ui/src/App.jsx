@@ -11,6 +11,8 @@ function App() {
   const [answer, setAnswer]               = useState("");
   const [keyword, setKeyword]             = useState("");
   const [matches, setMatches]             = useState([]);
+  const [globalKeyword, setGlobalKeyword] = useState("");
+  const [globalResults, setGlobalResults] = useState([]);
   const [agreement, setAgreement]         = useState("");
   const [agreements, setAgreements]       = useState([]);
   const [loading, setLoading]             = useState(false);
@@ -41,6 +43,7 @@ function App() {
   });
   const [activeTab, setActiveTab]         = useState("ask");
 
+  // ── history helpers ──────────────────────────────────────────────────
   const saveToHistory = (q, a, pdf) => {
     const entry = {
       id: Date.now(),
@@ -77,6 +80,7 @@ function App() {
     localStorage.removeItem(HISTORY_KEY);
   };
 
+  // ── PDF helpers ──────────────────────────────────────────────────────
   const getPdfUrl = (pdfName, page) =>
     `${API}/pdf/${encodeURIComponent(pdfName)}#page=${page}`;
 
@@ -90,6 +94,7 @@ function App() {
     }
   };
 
+  // ── ask question ─────────────────────────────────────────────────────
   const askQuestion = async (overrideAgreement = null) => {
 
     const q = overrideAgreement ? pendingQuestion : question;
@@ -103,11 +108,11 @@ function App() {
       setConfidence(0);
 
       const payload = { question: q };
-      if (overrideAgreement) payload.agreement = overrideAgreement;
-      else if (pinnedAgreement) payload.agreement = pinnedAgreement;
+      if (overrideAgreement)      payload.agreement = overrideAgreement;
+      else if (pinnedAgreement)   payload.agreement = pinnedAgreement;
 
       const response = await axios.post(`${API}/ask`, payload);
-      const data = response.data;
+      const data     = response.data;
 
       if (data.requires_selection) {
         setPendingQuestion(q);
@@ -144,25 +149,27 @@ function App() {
     }
   };
 
+  // ── select agreement card ────────────────────────────────────────────
   const selectAgreement = (pdfName) => {
-    setAwaitingSelection(false);
-    setAgreementOptions([]);
-    setPinnedAgreement(pdfName);
-    setViewerPdf(pdfName);
-    setViewerPage(1);
-    setCitedPages([]);
-    setCitedIndex(0);
-    setTimeout(() => {
-      if (iframeRef.current) {
-        iframeRef.current.src = "";
-        setTimeout(() => {
-          iframeRef.current.src = getPdfUrl(pdfName, 1);
-        }, 50);
-      }
-    }, 100);
-    askQuestion(pdfName);
-  };
+  setAwaitingSelection(false);
+  setAgreementOptions([]);
+  setPinnedAgreement(pdfName);
+  setViewerPdf(pdfName);
+  setViewerPage(1);
+  setCitedPages([]);
+  setCitedIndex(0);
+  setTimeout(() => {
+    if (iframeRef.current) {
+      iframeRef.current.src = "";
+      setTimeout(() => {
+        iframeRef.current.src = getPdfUrl(pdfName, 1);
+      }, 50);
+    }
+  }, 100);
+  // removed askQuestion — user must click Ask explicitly
+};
 
+  // ── keyword search (single agreement) ────────────────────────────────
   const searchKeyword = async () => {
     if (!agreement) return;
     try {
@@ -175,6 +182,21 @@ function App() {
     }
   };
 
+  // ── global keyword search (all agreements) ────────────────────────────
+  const searchGlobal = async () => {
+    if (!globalKeyword.trim()) return;
+    try {
+      const response = await axios.get(`${API}/keyword-search-all`, {
+        params: { keyword: globalKeyword },
+      });
+       console.log("GLOBAL RESULTS:", response.data);  // ADD THIS LINE
+      setGlobalResults(response.data.results || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // ── load agreements ──────────────────────────────────────────────────
   useEffect(() => {
     axios
       .get(`${API}/agreements`)
@@ -227,7 +249,7 @@ function App() {
 
         <div className="qa-panel">
 
-          {/* HISTORY TAB */}
+          {/* ── HISTORY TAB ── */}
           {activeTab === "history" && (
             <div>
               <div className="header">
@@ -279,7 +301,7 @@ function App() {
             </div>
           )}
 
-          {/* ASK TAB */}
+          {/* ── ASK TAB ── */}
           {activeTab === "ask" && (
             <>
               <div className="header">
@@ -287,6 +309,7 @@ function App() {
                 <p>Ask questions about your legal agreements</p>
               </div>
 
+              {/* Ask card */}
               <div className="card">
                 <h2>Ask a Question</h2>
                 <textarea
@@ -305,6 +328,7 @@ function App() {
                 </button>
               </div>
 
+              {/* Pinned bar */}
               {pinnedAgreement && (
                 <div className="pinned-agreement-bar">
                   <span>
@@ -326,6 +350,7 @@ function App() {
                 </div>
               )}
 
+              {/* Agreement selection cards */}
               {awaitingSelection && (
                 <div className="card">
                   <h2>Multiple agreements found — please select one</h2>
@@ -361,6 +386,7 @@ function App() {
                 </div>
               )}
 
+              {/* Answer */}
               <div className="card">
                 <h2>Answer</h2>
                 <div className="answer-box">
@@ -375,11 +401,9 @@ function App() {
                               style={{
                                 width: `${confidence}%`,
                                 background:
-                                  confidence >= 80
-                                    ? "#22c55e"
-                                    : confidence >= 50
-                                    ? "#f59e0b"
-                                    : "#ef4444",
+                                  confidence >= 80 ? "#22c55e"
+                                  : confidence >= 50 ? "#f59e0b"
+                                  : "#ef4444",
                               }}
                             />
                           </div>
@@ -396,9 +420,10 @@ function App() {
                 </div>
               </div>
 
+              {/* Single agreement keyword search */}
               <div className="card">
                 <h2>Keyword Search</h2>
-                <p style={{ marginBottom: "12px", color: "#93c5fd" }}>Agreement</p>
+                <p style={{ marginBottom: "12px", color: "#93c5fd" }}>Search within one agreement</p>
                 <div className="keyword-row">
                   <select
                     value={agreement}
@@ -420,26 +445,81 @@ function App() {
                     onChange={(e) => setKeyword(e.target.value)}
                     placeholder="termination"
                   />
-                  <button onClick={searchKeyword}>Search Keyword</button>
+                  <button onClick={searchKeyword}>Search</button>
                 </div>
               </div>
 
+              {/* Single agreement results */}
+              {matches.length > 0 && (
+                <div className="card">
+                  <h2>Results ({matches.length})</h2>
+                  {matches.map((match, index) => (
+                    <div key={index} className="keyword-result">
+                      <h4>Page {match.page_number}</h4>
+                      {match.heading && <p>{match.heading}</p>}
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: match.snippet
+                            .replaceAll("<<<HIGHLIGHT>>>", "<mark>")
+                            .replaceAll("<<<END>>>", "</mark>"),
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Global keyword search */}
               <div className="card">
-                <h2>Keyword Results ({matches.length})</h2>
-                {matches?.map((match, index) => (
-                  <div key={index} className="keyword-result">
-                    <h4>Page {match.page_number}</h4>
-                    {match.heading && <p>{match.heading}</p>}
-                    <div
-                      dangerouslySetInnerHTML={{
-                        __html: match.snippet
-                          .replaceAll("<<<HIGHLIGHT>>>", "<mark>")
-                          .replaceAll("<<<END>>>", "</mark>"),
-                      }}
-                    />
-                  </div>
-                ))}
+                <h2>Global Keyword Search</h2>
+                <p style={{ marginBottom: "12px", color: "#93c5fd" }}>Search across all agreements</p>
+                <div className="keyword-row">
+                  <input
+                    type="text"
+                    value={globalKeyword}
+                    onChange={(e) => setGlobalKeyword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && searchGlobal()}
+                    placeholder="e.g. indemnification"
+                    style={{ flex: 3 }}
+                  />
+                  <button onClick={searchGlobal} style={{ marginTop: 0 }}>
+                    Search All
+                  </button>
+                </div>
               </div>
+
+              {/* Global results */}
+              {globalResults.length > 0 && (
+                <div className="card">
+                  <h2>
+                    Global Results —{" "}
+                    {globalResults.reduce((a, g) => a + g.count, 0)} matches
+                    across {globalResults.length} agreements
+                  </h2>
+                  {globalResults.map((group) => (
+                    <div key={group.pdf_name} className="global-result-group">
+                      <div className="global-result-header">
+                        📄 {group.pdf_name.replace(".pdf","").replace(".PDF","")}
+                        <span className="global-result-count">{group.count} match{group.count !== 1 ? "es" : ""}</span>
+                      </div>
+                      {group.matches.map((match, i) => (
+                        <div key={i} className="keyword-result">
+                          <h4>Page {match.page_number}</h4>
+                          {match.heading && <p>{match.heading}</p>}
+                          <div
+                            dangerouslySetInnerHTML={{
+                              __html: match.snippet
+                                .replaceAll("<<<HIGHLIGHT>>>", "<mark>")
+                                .replaceAll("<<<END>>>", "</mark>"),
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+
             </>
           )}
 

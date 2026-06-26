@@ -502,3 +502,42 @@ mark {
   border-radius: 3px;
   transition: width 0.5s ease;
 }
+
+/* ── Global keyword search ── */
+.global-result-group {
+  margin-bottom: 20px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.global-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(59,130,246,0.12);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-size: 13px;
+  font-weight: 600;
+  color: #93c5fd;
+}
+
+.global-result-count {
+  font-size: 11px;
+  background: rgba(59,130,246,0.3);
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #e2e8f0;
+}
+
+.global-result-group .keyword-result {
+  border-radius: 0;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  margin-bottom: 0;
+}
+
+.global-result-group .keyword-result:last-child {
+  border-bottom: none;
+}

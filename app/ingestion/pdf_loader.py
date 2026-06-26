@@ -5,6 +5,7 @@ import pytesseract
 from PIL import Image
 import json
 import hashlib
+import re
 
 pytesseract.pytesseract.tesseract_cmd = (
     r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -12,6 +13,17 @@ pytesseract.pytesseract.tesseract_cmd = (
 
 CACHE_DIR = "cache"
 OCR_CACHE_VERSION = "v1"
+
+# matches "Page 19 of 108" or "page 19 of 108" in footer
+_PAGE_FOOTER_RE = re.compile(r"[Pp]age\s+(\d+)\s+of\s+\d+")
+
+
+def extract_internal_page_number(text):
+    """Extract internal page number from footer text like 'Page 19 of 108'."""
+    m = _PAGE_FOOTER_RE.search(text)
+    if m:
+        return int(m.group(1))
+    return None
 
 
 def preprocess_for_ocr(img):
@@ -53,8 +65,6 @@ def extract_page_text(page):
     img = Image.open(
         image_path
     )
-
-    # img = preprocess_for_ocr(img)
 
     text = pytesseract.image_to_string(
         img,
@@ -110,7 +120,6 @@ def get_cache_file(pdf_path):
     pdf_hash = get_pdf_hash(
         pdf_path
     )
-    
 
     return (
         f"{CACHE_DIR}/{pdf_hash}.json"
@@ -208,10 +217,15 @@ def load_pdf(pdf_path):
                 page
             )
 
+        # use internal page number from footer if available
+        # otherwise fall back to PDF index (page_num + 1)
+        internal_page = extract_internal_page_number(text)
+        display_page = page_num + 1
+
         pages.append(
             {
                 "pdf_name": Path(pdf_path).name,
-                "page_number": page_num + 1,
+                "page_number": display_page,
                 "pdf_path": pdf_path,
                 "text": text,
             }

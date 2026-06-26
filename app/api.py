@@ -44,7 +44,7 @@ def root():
 @app.get("/pdf/{pdf_name:path}")
 def serve_pdf(pdf_name: str):
 
-    results = collection.get(include=["metadatas"])
+    results  = collection.get(include=["metadatas"])
     pdf_path = None
 
     for meta in results["metadatas"]:
@@ -74,7 +74,6 @@ def serve_pdf(pdf_name: str):
 
 def get_matching_agreements(query: str) -> list[dict]:
     query_lower = normalize_query(query)
-
     sorted_keywords = sorted(DIRECT_PDF_KEYWORDS.keys(), key=len, reverse=True)
 
     for keyword in sorted_keywords:
@@ -157,12 +156,11 @@ def extract_sources(answer: str) -> tuple[str | None, int | None, list[int]]:
 
 
 def extract_confidence(answer: str) -> int:
-    """Parse CONFIDENCE: X% from answer string."""
     if "CONFIDENCE:" not in answer:
         return 0
     try:
         line = [l for l in answer.splitlines() if "CONFIDENCE:" in l][0]
-        val = re.search(r"(\d+)", line)
+        val  = re.search(r"(\d+)", line)
         return int(val.group(1)) if val else 0
     except:
         return 0
@@ -191,7 +189,7 @@ def ask_question(request: QuestionRequest):
                 answer="I don't know anything about that from the provided documents."
             )
 
-        answer = generate_answer(request.question, ranked_results)
+        answer     = generate_answer(request.question, ranked_results)
         source_pdf, source_page, cited_pages = extract_sources(answer)
         confidence = extract_confidence(answer)
 
@@ -233,7 +231,7 @@ def ask_question(request: QuestionRequest):
             answer="I don't know anything about that from the provided documents."
         )
 
-    answer = generate_answer(request.question, ranked_results)
+    answer     = generate_answer(request.question, ranked_results)
     source_pdf, source_page, cited_pages = extract_sources(answer)
     confidence = extract_confidence(answer)
 
@@ -246,7 +244,7 @@ def ask_question(request: QuestionRequest):
     )
 
 
-# ── existing endpoints ────────────────────────────────────────────────────
+# ── keyword search (single agreement) ────────────────────────────────────
 
 @app.get("/keyword-search")
 def keyword_search(keyword: str, agreement: str):
@@ -265,9 +263,9 @@ def keyword_search(keyword: str, agreement: str):
         if keyword not in doc_lower:
             continue
 
-        index = doc_lower.find(keyword)
-        start = max(0, index - 150)
-        end   = min(len(doc), index + 150)
+        index   = doc_lower.find(keyword)
+        start   = max(0, index - 150)
+        end     = min(len(doc), index + 150)
         snippet = " ".join(doc[start:end].split())
         snippet = re.sub(
             rf"(?i)({re.escape(keyword)})",
@@ -289,10 +287,67 @@ def keyword_search(keyword: str, agreement: str):
     }
 
 
+# ── NEW: global keyword search (all agreements) ───────────────────────────
+
+@app.get("/keyword-search-all")
+def keyword_search_all(keyword: str):
+
+    keyword_lower = keyword.lower()
+    results       = collection.get(include=["documents", "metadatas"])
+    matches_by_pdf = {}
+
+    for doc, meta in zip(results["documents"], results["metadatas"]):
+
+        doc_lower = doc.lower()
+
+        if keyword_lower not in doc_lower:
+            continue
+
+        pdf_name = meta["pdf_name"]
+
+        index   = doc_lower.find(keyword_lower)
+        start   = max(0, index - 150)
+        end     = min(len(doc), index + 150)
+        snippet = " ".join(doc[start:end].split())
+        snippet = re.sub(
+            rf"(?i)({re.escape(keyword_lower)})",
+            r"<<<HIGHLIGHT>>>\1<<<END>>>",
+            snippet,
+        )
+
+        if pdf_name not in matches_by_pdf:
+            matches_by_pdf[pdf_name] = []
+
+        matches_by_pdf[pdf_name].append({
+            "page_number": meta["page_number"],
+            "heading":     meta.get("heading", ""),
+            "snippet":     snippet,
+        })
+
+    # build result list sorted by pdf name
+    grouped = []
+    for pdf_name in sorted(matches_by_pdf.keys()):
+        grouped.append({
+            "pdf_name": pdf_name,
+            "count":    len(matches_by_pdf[pdf_name]),
+            "matches":  matches_by_pdf[pdf_name],
+        })
+
+    total = sum(g["count"] for g in grouped)
+
+    return {
+        "keyword": keyword,
+        "total":   total,
+        "results": grouped,
+    }
+
+
+# ── agreements list ───────────────────────────────────────────────────────
+
 @app.get("/agreements")
 def get_agreements():
 
-    results = collection.get(include=["metadatas"])
+    results    = collection.get(include=["metadatas"])
     agreements = set()
 
     for meta in results["metadatas"]:
