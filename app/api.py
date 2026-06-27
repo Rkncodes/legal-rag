@@ -208,7 +208,7 @@ def ask_question(request: QuestionRequest):
     for m in matched:
         print(" -", m["pdf_name"])
 
-    if len(matched) >= 1 and not direct:
+    if len(matched) > 1 and not direct:
         print("\nSHOWING CARDS → requires_selection=True")
         return QuestionResponse(
             requires_selection=True,

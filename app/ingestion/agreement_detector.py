@@ -91,6 +91,8 @@ DIRECT_PDF_KEYWORDS = {
     "ttipl airtel":             "Airtel-TTIPL-masterservicesagmt.PDF",
     "essar":                    "Airtel-TTIPL-masterservicesagmt.PDF",
     "ttipl":                    "Airtel-TTIPL-masterservicesagmt.PDF",
+    "telecom tower infrastructure": "Airtel-TTIPL-masterservicesagmt.PDF",
+    "telecom tower":                "Airtel-TTIPL-masterservicesagmt.PDF",
 
     # ── Topaz (Vodafone & ATC Telecom) ───────────────────────────────────
     "atc telecom infrastructure private limited": "Topaz MSA Voda-ATCTIPL MSA for Aquired & New Sites.pdf",
@@ -208,7 +210,11 @@ COMPANY_PATTERNS = {
 
 
 def normalize_query(query):
-    return query.lower()
+    query = query.lower()
+    query = query.replace(" and ", " ")
+    query = query.replace(" & ", " ")
+    return query
+    
 
 
 def detect_agreement_from_metadata(query):
