@@ -104,8 +104,8 @@ def split_into_sections(text):
     current_content_page = None
 
     numbered_heading_pattern = re.compile(
-        r"^\d+(?:\.\d+)*\.?\s+[A-Z].+$"
-    )
+    r"^\d+(?:\.\d+)*[.,]?\s+[A-Z].+$"
+    ) 
 
     caps_heading_pattern = re.compile(
         r"^[A-Z][A-Z\s&\-]{3,}$"
@@ -122,7 +122,7 @@ def split_into_sections(text):
     )
 
     page_marker_pattern = re.compile(
-        r"^<<<PAGE_(\d+)>>>$"
+    r"<<<PAGE_(\d+)>>>"
     )
 
     for line in lines:
@@ -139,7 +139,7 @@ def split_into_sections(text):
             continue
 
         # track page number from marker
-        page_match = page_marker_pattern.match(line)
+        page_match = page_marker_pattern.search(line)
         if page_match:
             current_page = int(page_match.group(1))
             continue

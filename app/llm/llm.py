@@ -33,6 +33,11 @@ def generate_answer(question, ranked_results):
 
     chunks   = [item["chunk"]    for item in top_chunks]
     metadata = [item["metadata"] for item in top_chunks]
+    
+    print("\nTOP CHUNKS METADATA DEBUG:")
+    for i, item in enumerate(top_chunks):
+         print(f"  {i+1}. page={item['metadata']['page_number']} heading={item['metadata'].get('heading','')[:50]}")
+         print(f"      content={item['chunk'][:80]}")
 
     if DEBUG:
         print(f"\nChunks sent to LLM: {len(chunks)}")

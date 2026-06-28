@@ -1,9 +1,12 @@
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
+import { saveAs } from "file-saver";
 import "./App.css";
 
 const API = "http://127.0.0.1:8000";
-const HISTORY_KEY = "legal-rag-history";
+const HISTORY_KEY   = "legal-rag-history";
+const BOOKMARK_KEY  = "legal-rag-bookmarks";
 
 function parseAnswer(raw) {
   if (!raw) return { text: "", sources: [] };
@@ -49,11 +52,18 @@ function App() {
   const [citedPages, setCitedPages] = useState([]);
   const [citedIndex, setCitedIndex] = useState(0);
   const iframeRef                   = useRef(null);
+  const answerRef                   = useRef(null);
 
   const [history, setHistory] = useState(() => {
     try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
     catch { return []; }
   });
+
+  const [bookmarks, setBookmarks] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(BOOKMARK_KEY)) || []; }
+    catch { return []; }
+  });
+
   const [activeTab, setActiveTab]         = useState("ask");
   const [historySearch, setHistorySearch] = useState("");
   const [darkMode, setDarkMode]           = useState(true);
@@ -64,6 +74,30 @@ function App() {
     setHistory(updated);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
   };
+
+  const toggleBookmark = () => {
+    if (!answerText || !question) return;
+    const existing = bookmarks.find(b => b.question === question);
+    if (existing) {
+      const updated = bookmarks.filter(b => b.question !== question);
+      setBookmarks(updated);
+      localStorage.setItem(BOOKMARK_KEY, JSON.stringify(updated));
+    } else {
+      const entry = {
+        id: Date.now(),
+        question,
+        answer,
+        pdf: viewerPdf || null,
+        sources: parsedSources,
+        timestamp: new Date().toLocaleString(),
+      };
+      const updated = [entry, ...bookmarks].slice(0, 50);
+      setBookmarks(updated);
+      localStorage.setItem(BOOKMARK_KEY, JSON.stringify(updated));
+    }
+  };
+
+  const isBookmarked = bookmarks.some(b => b.question === question);
 
   const restoreFromHistory = (entry) => {
     setQuestion(entry.question);
@@ -106,8 +140,67 @@ function App() {
     });
   };
 
-  const askQuestion = async (overrideAgreement = null) => {
-    const q = overrideAgreement ? pendingQuestion : question;
+  // ── Download helpers ──────────────────────────────────────────
+  const buildDownloadText = () => {
+    let txt = `Question: ${question}\n\n${answerText}`;
+    if (parsedSources.length > 0) {
+      txt += "\n\nSources:\n";
+      parsedSources.forEach(s => { txt += `  ${s.pdf} — Page ${s.page}\n`; });
+    }
+    return txt;
+  };
+
+  const downloadTxt = () => {
+    const blob = new Blob([buildDownloadText()], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, `${question.slice(0, 40).replace(/[^a-z0-9]/gi, "_")}.txt`);
+  };
+
+  const downloadDocx = async () => {
+    const sourceParas = parsedSources.map(s =>
+      new Paragraph({ children: [new TextRun({ text: `${s.pdf} — Page ${s.page}`, size: 20, color: "888888" })] })
+    );
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({ text: question, heading: HeadingLevel.HEADING_1 }),
+          new Paragraph({ text: "" }),
+          ...answerText.split("\n").map(line =>
+            new Paragraph({ children: [new TextRun({ text: line, size: 22 })] })
+          ),
+          new Paragraph({ text: "" }),
+          ...(parsedSources.length > 0 ? [
+            new Paragraph({ text: "Sources", heading: HeadingLevel.HEADING_2 }),
+            ...sourceParas,
+          ] : []),
+        ],
+      }],
+    });
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `${question.slice(0, 40).replace(/[^a-z0-9]/gi, "_")}.docx`);
+  };
+
+  const downloadPdf = () => {
+    const win = window.open("", "_blank");
+    win.document.write(`
+      <html><head><title>${question}</title>
+      <style>
+        body { font-family: Georgia, serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #1a1a1a; }
+        h1 { font-size: 18px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 20px; }
+        pre { white-space: pre-wrap; font-family: inherit; font-size: 14px; }
+        .sources { margin-top: 24px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 12px; color: #555; }
+      </style></head><body>
+      <h1>${question}</h1>
+      <pre>${answerText}</pre>
+      ${parsedSources.length > 0 ? `<div class="sources"><strong>Sources:</strong><br>${parsedSources.map(s => `${s.pdf} — Page ${s.page}`).join("<br>")}</div>` : ""}
+      </body></html>
+    `);
+    win.document.close();
+    setTimeout(() => { win.print(); }, 500);
+  };
+
+  const askQuestion = async (overrideAgreement = null, overrideQuestion = null) => {
+    const q = overrideQuestion || (overrideAgreement ? pendingQuestion : question);
     if (!q.trim()) return;
     try {
       setLoading(true);
@@ -151,6 +244,12 @@ function App() {
           }
         }, 100);
       }
+
+      // scroll to answer
+      setTimeout(() => {
+        answerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+
     } catch (err) {
       console.error(err);
       setAnswer("Failed to connect to backend.");
@@ -231,6 +330,10 @@ function App() {
             History
             {history.length > 0 && <span className="history-badge">{history.length}</span>}
           </div>
+          <div className={`menu-item ${activeTab === "bookmarks" ? "active" : ""}`} onClick={() => setActiveTab("bookmarks")}>
+            Saved
+            {bookmarks.length > 0 && <span className="history-badge">{bookmarks.length}</span>}
+          </div>
         </div>
 
         <button className="theme-toggle" onClick={() => setDarkMode(!darkMode)}>
@@ -246,6 +349,7 @@ function App() {
       <div className="split-layout">
         <div className="qa-panel">
 
+          {/* ── History tab ── */}
           {activeTab === "history" && (
             <div>
               <div className="header">
@@ -268,10 +372,7 @@ function App() {
                 </div>
               ) : (
                 <>
-                  <button
-                    onClick={clearHistory}
-                    style={{ background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.35)", marginBottom: "14px" }}
-                  >
+                  <button onClick={clearHistory} style={{ background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.35)", marginBottom: "14px" }}>
                     Clear All
                   </button>
                   {filteredHistory.map((entry) => (
@@ -289,6 +390,44 @@ function App() {
             </div>
           )}
 
+          {/* ── Bookmarks tab ── */}
+          {activeTab === "bookmarks" && (
+            <div>
+              <div className="header">
+                <h1>Saved</h1>
+                <p>Your bookmarked clauses</p>
+              </div>
+              {bookmarks.length === 0 ? (
+                <div className="card">
+                  <div className="empty-state">
+                    <div className="empty-state-icon">⭐</div>
+                    <p>No saved clauses yet. Click the star on any answer to save it.</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { setBookmarks([]); localStorage.removeItem(BOOKMARK_KEY); }}
+                    style={{ background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.35)", marginBottom: "14px" }}
+                  >
+                    Clear All
+                  </button>
+                  {bookmarks.map((entry) => (
+                    <div key={entry.id} className="history-item" onClick={() => restoreFromHistory(entry)}>
+                      <div className="history-question">⭐ {entry.question}</div>
+                      <div className="history-meta">
+                        {entry.pdf && <span className="history-pdf">📄 {shortName(entry.pdf)}</span>}
+                        <span className="history-time">{entry.timestamp}</span>
+                      </div>
+                      <div className="history-preview">{entry.answer.slice(0, 120)}...</div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Ask tab ── */}
           {activeTab === "ask" && (
             <>
               <div className="header">
@@ -351,26 +490,35 @@ function App() {
                 </div>
               )}
 
-              <div className="card">
+              {/* Answer card */}
+              <div className="card" ref={answerRef}>
                 <h2>Answer</h2>
                 <div className="answer-box">
                   {answerText ? (
                     <>
-                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "10px" }}>
+                      {/* Action bar */}
+                      <div className="answer-actions">
                         <button
                           onClick={copyAnswer}
+                          className="action-btn"
                           style={{
-                            margin: 0,
-                            padding: "5px 12px",
-                            fontSize: "11px",
                             background: copied ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.08)",
                             border: copied ? "1px solid rgba(34,197,94,0.4)" : "1px solid var(--border-2)",
                             color: copied ? "var(--green)" : "var(--text-dim)",
-                            borderRadius: "6px",
                           }}
                         >
                           {copied ? "✓ Copied" : "Copy"}
                         </button>
+                        <button onClick={toggleBookmark} className="action-btn" style={{
+                          background: isBookmarked ? "rgba(240,165,0,0.2)" : "rgba(255,255,255,0.08)",
+                          border: isBookmarked ? "1px solid rgba(240,165,0,0.4)" : "1px solid var(--border-2)",
+                          color: isBookmarked ? "var(--gold)" : "var(--text-dim)",
+                        }}>
+                          {isBookmarked ? "⭐ Saved" : "☆ Save"}
+                        </button>
+                        <button onClick={downloadTxt} className="action-btn">TXT</button>
+                        <button onClick={downloadDocx} className="action-btn">DOCX</button>
+                        <button onClick={downloadPdf} className="action-btn">PDF</button>
                       </div>
 
                       <pre>{answerText}</pre>
@@ -399,14 +547,10 @@ function App() {
                         <div className="sources-section">
                           <div className="sources-label">Sources</div>
                           {parsedSources.map((s, i) => (
-                            <div
-                              key={i}
-                              className="source-card"
-                              onClick={() => {
-                                const page = parseInt(s.page);
-                                if (!isNaN(page)) { setViewerPdf(s.pdf); jumpToPage(page); }
-                              }}
-                            >
+                            <div key={i} className="source-card" onClick={() => {
+                              const page = parseInt(s.page);
+                              if (!isNaN(page)) { setViewerPdf(s.pdf); jumpToPage(page); }
+                            }}>
                               <div className="source-card-pdf">📄 {shortName(s.pdf)}</div>
                               <div className="source-card-meta">
                                 <span className="source-card-path">{s.pdf}</span>
