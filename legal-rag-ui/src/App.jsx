@@ -41,6 +41,9 @@ function App() {
   const [confidence, setConfidence]       = useState(0);
   const [parsedSources, setParsedSources] = useState([]);
   const [copied, setCopied]               = useState(false);
+  const [tables, setTables]               = useState([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [expandedTable, setExpandedTable] = useState(null);
 
   const [awaitingSelection, setAwaitingSelection] = useState(false);
   const [agreementOptions, setAgreementOptions]   = useState([]);
@@ -138,6 +141,21 @@ function App() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const loadTables = async (pdfName) => {
+    if (!pdfName) return;
+    try {
+      setTablesLoading(true);
+      setExpandedTable(null);
+      const response = await axios.get(`${API}/tables/${encodeURIComponent(pdfName)}`);
+      setTables(response.data.tables || []);
+    } catch (err) {
+      console.error("Table load failed:", err);
+      setTables([]);
+    } finally {
+      setTablesLoading(false);
+    }
   };
 
   // ── Download helpers ──────────────────────────────────────────
@@ -245,7 +263,6 @@ function App() {
         }, 100);
       }
 
-      // scroll to answer
       setTimeout(() => {
         answerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 150);
@@ -299,6 +316,11 @@ function App() {
       })
       .catch((e) => console.error("Agreement load failed:", e));
   }, []);
+
+  useEffect(() => {
+    if (viewerPdf) loadTables(viewerPdf);
+    else setTables([]);
+  }, [viewerPdf]);
 
   const shortName = (name) => name.replace(".pdf","").replace(".PDF","");
   const { text: answerText } = parseAnswer(answer);
@@ -377,7 +399,22 @@ function App() {
                   </button>
                   {filteredHistory.map((entry) => (
                     <div key={entry.id} className="history-item" onClick={() => restoreFromHistory(entry)}>
-                      <div className="history-question">{entry.question}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div className="history-question">{entry.question}</div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updated = history.filter(h => h.id !== entry.id);
+                            setHistory(updated);
+                            localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+                          }}
+                          style={{
+                            margin: 0, padding: "2px 8px", fontSize: "10px",
+                            background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)",
+                            color: "#ef4444", borderRadius: "4px", flexShrink: 0, marginLeft: "8px",
+                          }}
+                        >✕</button>
+                      </div>
                       <div className="history-meta">
                         {entry.pdf && <span className="history-pdf">📄 {shortName(entry.pdf)}</span>}
                         <span className="history-time">{entry.timestamp}</span>
@@ -414,7 +451,22 @@ function App() {
                   </button>
                   {bookmarks.map((entry) => (
                     <div key={entry.id} className="history-item" onClick={() => restoreFromHistory(entry)}>
-                      <div className="history-question">⭐ {entry.question}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div className="history-question">⭐ {entry.question}</div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updated = bookmarks.filter(b => b.id !== entry.id);
+                            setBookmarks(updated);
+                            localStorage.setItem(BOOKMARK_KEY, JSON.stringify(updated));
+                          }}
+                          style={{
+                            margin: 0, padding: "2px 8px", fontSize: "10px",
+                            background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)",
+                            color: "#ef4444", borderRadius: "4px", flexShrink: 0, marginLeft: "8px",
+                          }}
+                        >✕</button>
+                      </div>
                       <div className="history-meta">
                         {entry.pdf && <span className="history-pdf">📄 {shortName(entry.pdf)}</span>}
                         <span className="history-time">{entry.timestamp}</span>
@@ -460,7 +512,7 @@ function App() {
               {pinnedAgreement && (
                 <div className="pinned-agreement-bar">
                   <span>📌 Searching in: <strong>{shortName(pinnedAgreement)}</strong></span>
-                  <button className="clear-pin-btn" onClick={() => { setPinnedAgreement(null); setViewerPdf(null); setCitedPages([]); }}>
+                  <button className="clear-pin-btn" onClick={() => { setPinnedAgreement(null); setViewerPdf(null); setCitedPages([]); setTables([]); }}>
                     Clear ✕
                   </button>
                 </div>
@@ -496,17 +548,12 @@ function App() {
                 <div className="answer-box">
                   {answerText ? (
                     <>
-                      {/* Action bar */}
                       <div className="answer-actions">
-                        <button
-                          onClick={copyAnswer}
-                          className="action-btn"
-                          style={{
-                            background: copied ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.08)",
-                            border: copied ? "1px solid rgba(34,197,94,0.4)" : "1px solid var(--border-2)",
-                            color: copied ? "var(--green)" : "var(--text-dim)",
-                          }}
-                        >
+                        <button onClick={copyAnswer} className="action-btn" style={{
+                          background: copied ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.08)",
+                          border: copied ? "1px solid rgba(34,197,94,0.4)" : "1px solid var(--border-2)",
+                          color: copied ? "var(--green)" : "var(--text-dim)",
+                        }}>
                           {copied ? "✓ Copied" : "Copy"}
                         </button>
                         <button onClick={toggleBookmark} className="action-btn" style={{
@@ -642,6 +689,65 @@ function App() {
                       ))}
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Tables card — auto-loads when PDF opens */}
+              {(tablesLoading || tables.length > 0) && (
+                <div className="card">
+                  <h2>Tables {tables.length > 0 ? `(${tables.length})` : ""}</h2>
+                  {tablesLoading ? (
+                    <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>Loading tables…</p>
+                  ) : (
+                    tables.map((table, i) => (
+                      <div key={i} style={{ marginBottom: "10px" }}>
+                        <div
+                          style={{
+                            display: "flex", justifyContent: "space-between", alignItems: "center",
+                            padding: "8px 12px", background: "var(--surface-2)", borderRadius: "var(--radius-sm)",
+                            cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "var(--text-dim)",
+                            border: "1px solid var(--border)",
+                          }}
+                          onClick={() => setExpandedTable(expandedTable === i ? null : i)}
+                        >
+                          <span>📊 Page {table.page} — Table {table.table_index}</span>
+                          <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                            {table.row_count} rows × {table.col_count} cols {expandedTable === i ? "▲" : "▼"}
+                          </span>
+                        </div>
+                        {expandedTable === i && (
+                          <div style={{ overflowX: "auto", marginTop: "6px" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", color: "var(--text)" }}>
+                              {table.headers.length > 0 && (
+                                <thead>
+                                  <tr>
+                                    {table.headers.map((h, j) => (
+                                      <th key={j} style={{
+                                        padding: "6px 10px", background: "var(--accent-dim)",
+                                        border: "1px solid var(--border-2)", textAlign: "left",
+                                        fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap",
+                                      }}>{h || "—"}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                              )}
+                              <tbody>
+                                {table.rows.map((row, ri) => (
+                                  <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}>
+                                    {row.map((cell, ci) => (
+                                      <td key={ci} style={{
+                                        padding: "5px 10px", border: "1px solid var(--border)", verticalAlign: "top",
+                                      }}>{cell || "—"}</td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </>

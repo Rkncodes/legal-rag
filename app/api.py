@@ -11,6 +11,7 @@ from app.ingestion.agreement_detector import (
     DIRECT_PDF_KEYWORDS,
     normalize_query,
 )
+from app.ingestion.table_extractor import extract_tables_from_pdf
 import re
 import os
 
@@ -68,6 +69,39 @@ def serve_pdf(pdf_name: str):
             "Access-Control-Allow-Origin": "*",
         }
     )
+
+
+# ── table extraction ──────────────────────────────────────────────────────
+
+@app.get("/tables/{pdf_name:path}")
+def get_tables(pdf_name: str):
+
+    results  = collection.get(include=["metadatas"])
+    pdf_path = None
+
+    for meta in results["metadatas"]:
+        if meta["pdf_name"] == pdf_name:
+            pdf_path = meta.get("pdf_path")
+            break
+
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail=f"PDF not found: {pdf_name}")
+
+    pdf_path = pdf_path.replace("\\", "/")
+
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail=f"File not found: {pdf_path}")
+
+    try:
+        tables = extract_tables_from_pdf(pdf_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Table extraction failed: {str(e)}")
+
+    return {
+        "pdf_name":    pdf_name,
+        "table_count": len(tables),
+        "tables":      tables,
+    }
 
 
 # ── routing helpers ───────────────────────────────────────────────────────
@@ -287,7 +321,7 @@ def keyword_search(keyword: str, agreement: str):
     }
 
 
-# ── NEW: global keyword search (all agreements) ───────────────────────────
+# ── global keyword search (all agreements) ────────────────────────────────
 
 @app.get("/keyword-search-all")
 def keyword_search_all(keyword: str):
@@ -324,7 +358,6 @@ def keyword_search_all(keyword: str):
             "snippet":     snippet,
         })
 
-    # build result list sorted by pdf name
     grouped = []
     for pdf_name in sorted(matches_by_pdf.keys()):
         grouped.append({
