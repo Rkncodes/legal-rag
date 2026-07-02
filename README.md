@@ -1,4 +1,4 @@
-# ⚖️ JurisRAG
+8# ⚖️ JurisRAG
 
 > Enterprise-grade Retrieval-Augmented Generation (RAG) system for intelligent legal document search and question answering.
 
@@ -175,29 +175,15 @@ JurisRAG/
 
 ---
 
-# Screenshots
-
-> Add screenshots here.
-
-Suggested screenshots:
-
-- Home page
-- Question answering
-- PDF viewer
-- Table extraction
-- Search history
-- Dark mode
-
----
 
 # Installation
 
 Clone the repository:
 
 ```bash
-git clone https://github.com/Rkncodes/legal-rag.git
+git clone https://github.com/Rkncodes/JurisRAG.git
 
-cd legal-rag
+cd JurisRAG
 ```
 
 Install Python dependencies:
@@ -215,24 +201,12 @@ uvicorn app.api:app --reload
 Run the frontend:
 
 ```bash
-cd legal-rag-ui
+cd jurisragui
 
 npm install
 
 npm run dev
 ```
-
----
-
-# Future Improvements
-
-- Hybrid Retrieval (BM25 + Dense Retrieval)
-- Streaming Responses
-- Role-based Authentication
-- Multi-document comparison
-- Legal clause summarization
-- Agentic legal workflows
-- Cloud deployment
 
 ---
 
