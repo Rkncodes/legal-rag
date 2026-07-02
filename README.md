@@ -166,7 +166,7 @@ JurisRAG/
 │   └── llm/
 │         └── llm.py
 │
-├── legal-rag-ui/
+├── jurisragui/
 │
 ├── agreements/
 │
